@@ -22,19 +22,25 @@ Parameters:
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
-      - Label: Repository connection
+      - Label:
+          default: Repository connection
         Parameters:
           - CodeStarConnectionArn
           - ForkedRepoId
           - BranchName
-      - Label: Project
+      - Label:
+          default: Project
         Parameters:
           - ProjectName
     ParameterLabels:
-      ProjectName: Name
-      CodeStarConnectionArn: CodeStar Connection ARN
-      ForkedRepoId: Repository Id
-      BranchName: Branch Name
+      ProjectName:
+        default: Name
+      CodeStarConnectionArn:
+        default: CodeStar Connection ARN
+      ForkedRepoId:
+        default: Repository Id
+      BranchName:
+        default: Branch Name
 
 Resources:
   #############

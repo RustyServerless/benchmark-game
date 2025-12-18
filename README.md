@@ -192,7 +192,7 @@ If you wish to follow what is happening, keep the CloudFormation tab open in you
 1. `root-stack-benchmark-game` - ⏳ Wait for status **DELETE_COMPLETE** - This stack uses an IAM role created by the CI stack
 2. `benchmark-game-ci` - This stack owns the IAM role used by the first for its operations.
 
-🚨 **PLEASE READ**: Do not attempt to delete both stacks simultaneously, as this **WILL** cause failures that are difficult to resolve. You must wait for the first stack to **COMPLETELY** finish deleting before starting deletion of the second stack. One of the IAM roles of the `benchmark-game-ci` stack is used for the operations of the `root-stack-benchmark-game` stack.
+🚨 **PLEASE READ**: Do not attempt to delete both stacks simultaneously, as this **WILL** cause failures that are difficult to resolve. You must wait for the first stack (benchmark-game) to **COMPLETELY** finish deleting before starting deletion of the second stack (CI stack). One of the IAM roles of the `benchmark-game-ci` stack is used for the operations of the `root-stack-benchmark-game` stack.
 
 ## Usage
 

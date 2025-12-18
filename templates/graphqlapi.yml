@@ -129,7 +129,7 @@ Resources:
   "Fn::ForEach::RustBench":
     - Op
     - [clickRust, reportLatencyRust]
-    - "RustMutation${Op}Resolver":
+    - "Mutation${Op}Resolver":
         Type: AWS::AppSync::Resolver
         DependsOn: GraphQLApiSchema
         Properties:
@@ -147,7 +147,7 @@ Resources:
   "Fn::ForEach::PythonBench":
     - Op
     - [clickPython, reportLatencyPython]
-    - "RustMutation${Op}Resolver":
+    - "Mutation${Op}Resolver":
         Type: AWS::AppSync::Resolver
         DependsOn: GraphQLApiSchema
         Properties:
