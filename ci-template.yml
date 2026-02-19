@@ -10,7 +10,7 @@ Parameters:
     AllowedPattern: ^[a-z][a-z0-9-]{1,23}[a-z0-9]$
   CodeStarConnectionArn:
     Type: String
-    Description: The ARN of the CodeStart connection to GitHub, follow the Get Started on https://github.com/JeremieRodon/demo-rust-lambda-appsync.git
+    Description: The ARN of the CodeStart connection to GitHub, follow the Get Started on https://github.com/RustyServerless/benchmark-game.git
   ForkedRepoId:
     Type: String
     Description: The ID of the FORKED repository in YOUR GitHub account, probably <YourGithubUserName>/demo-rust-lambda-appsync

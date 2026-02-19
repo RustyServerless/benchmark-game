@@ -1,9 +1,9 @@
 <!-- markdownlint-disable MD029 MD033 MD041 -->
 <!-- PROJECT SHIELDS -->
-[![License](https://img.shields.io/github/license/JeremieRodon/demo-rust-lambda-appsync.svg)](https://github.com/JeremieRodon/demo-rust-lambda-appsync/blob/master/LICENSE)
+[![License](https://img.shields.io/github/license/RustyServerless/benchmark-game.svg)](https://github.com/RustyServerless/benchmark-game/blob/master/LICENSE)
 
 <div align="center">
-  <a href="https://github.com/JeremieRodon/demo-rust-lambda-appsync">
+  <a href="https://github.com/RustyServerless/benchmark-game">
     <img src="images/logo.png" alt="Logo" style="max-width: 800px">
   </a>
 
@@ -23,7 +23,7 @@ The project also serves as a production-ready reference architecture, showcasing
 - Automated CI/CD pipeline setup
 - Integration of the `lambda-appsync` crate for type-safe Rust Lambda development
 
-👉 Check out the [`lambda-appsync`](https://github.com/JeremieRodon/lambda-appsync) repository for more details on the Rust integration.
+👉 Check out the [`lambda-appsync`](https://github.com/RustyServerless/lambda-appsync) repository for more details on the Rust integration.
 
 <details>
   <summary>Table of Contents</summary>
@@ -160,7 +160,7 @@ This step is only necessary if you don't already have a CodeStar Connection to y
 
 ### Deployment
 
-Now you are ready to deploy, download the CloudFormation template [ci-template.yml](https://github.com/JeremieRodon/demo-rust-lambda-appsync/blob/master/ci-template.yml)
+Now you are ready to deploy, download the CloudFormation template [ci-template.yml](https://github.com/RustyServerless/benchmark-game/blob/master/ci-template.yml)
 from the link or from your newly forked repository if you prefer.
 
 5. Go to the CloudFormation console and create a new stack.
@@ -338,4 +338,4 @@ Distributed under the MIT License. See `LICENSE.txt` for more information.
 
 Jérémie RODON - [![LinkedIn](https://img.shields.io/badge/linkedin-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/JeremieRodon)
 
-Project Link: [https://github.com/JeremieRodon/demo-rust-lambda-appsync](https://github.com/JeremieRodon/demo-rust-lambda-appsync)
+Project Link: [https://github.com/RustyServerless/benchmark-game](https://github.com/RustyServerless/benchmark-game)

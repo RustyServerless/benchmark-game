@@ -367,11 +367,7 @@ onUnmounted(() => {
     <div class="grow"></div>
     <footer class="footer justify-center md:justify-end pb-20 pt-4 md:py-4 md:p-4">
       <aside class="text-xs">
-        <a
-          href="https://github.com/JeremieRodon/demo-rust-lambda-appsync.git"
-          class="p-1"
-          target="_blank"
-        >
+        <a href="https://github.com/RustyServerless/benchmark-game.git" class="p-1" target="_blank">
           <svg
             xmlns="http://www.w3.org/2000/svg"
             viewBox="0 0 24 24"
