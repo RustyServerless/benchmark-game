@@ -477,9 +477,9 @@ dependencies = [
 
 [[package]]
 name = "aws-smithy-xml"
-version = "0.60.13"
+version = "0.60.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11b2f670422ff42bf7065031e72b45bc52a3508bd089f743ea90731ca2b6ea57"
+checksum = "0ce02add1aa3677d022f8adf81dcbe3046a95f17a1b1e8979c145cd21d3d22b3"
 dependencies = [
  "xmlparser",
 ]
@@ -763,6 +763,16 @@ name = "equivalent"
 version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
+
+[[package]]
+name = "errno"
+version = "0.3.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
+dependencies = [
+ "libc",
+ "windows-sys 0.52.0",
+]
 
 [[package]]
 name = "fastrand"
@@ -1364,13 +1374,12 @@ dependencies = [
 
 [[package]]
 name = "lambda-appsync"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68a6ec6cda3977501674b0f51dbff47edba4a3e3da736bd0e93eddec0ae1973a"
+checksum = "ff862cee89a574e7d89a4f2be03fdf35bd79d4a6b7641dd5b1ea0aca3eba721e"
 dependencies = [
  "aws-config",
  "aws-smithy-types",
- "env_logger",
  "lambda-appsync-proc",
  "lambda_runtime",
  "log",
@@ -1383,9 +1392,9 @@ dependencies = [
 
 [[package]]
 name = "lambda-appsync-proc"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d32c1bfd12695b3a192eef851f5f3b57a6c60beb2640bf65032e2d824222ea4"
+checksum = "c77c4345cfef78df86bc290af208917e0e0ed95845dfbfd7df4ef48a9fc56376"
 dependencies = [
  "graphql-parser",
  "proc-macro2",
@@ -2065,10 +2074,11 @@ checksum = "0fda2ff0d084019ba4d7c6f371c95d8fd75ce3524c3cb8fb653a3023f6323e64"
 
 [[package]]
 name = "signal-hook-registry"
-version = "1.4.7"
+version = "1.4.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7664a098b8e616bdfcc2dc0e9ac44eb231eedf41db4e9fe95d8d32ec728dedad"
+checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
+ "errno",
  "libc",
 ]
 
