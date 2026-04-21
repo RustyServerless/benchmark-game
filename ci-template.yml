@@ -1,24 +1,31 @@
 AWSTemplateFormatVersion: 2010-09-09
+# SAM (Serverless Application Model) transform enables shorthand syntax
+# like AWS::Serverless::Function that CloudFormation expands into full resource definitions.
 Transform: AWS::Serverless-2016-10-31
-Description: CodePipeline pipeline for the demo
+Description: CICD for the Benchmark Game AppSync/Rust lambda demo
 
 Parameters:
   ProjectName:
     Type: String
-    Description: Name of the project to insert in all resources names (3-25 chars, only lowercases, numbers and dashes, must not begin by a number or a dash, must not end with a dash)
+    Description: Name of the project to insert in all resources names
     Default: "benchmark-game"
+    # Regex constraint: enforces DNS-safe naming (lowercase, no leading/trailing dash)
     AllowedPattern: ^[a-z][a-z0-9-]{1,23}[a-z0-9]$
+    ConstraintDescription: Must be 3-25 characters, only lowercase letters, numbers and dashes, must not begin with a number or dash, must not end with a dash
+  # CodeStar Connections provides OAuth access to GitHub repos without storing credentials.
   CodeStarConnectionArn:
     Type: String
     Description: The ARN of the CodeStart connection to GitHub, follow the Get Started on https://github.com/RustyServerless/benchmark-game.git
   ForkedRepoId:
     Type: String
-    Description: The ID of the FORKED repository in YOUR GitHub account, probably <YourGithubUserName>/demo-rust-lambda-appsync
+    Description: The ID of the FORKED repository in YOUR GitHub account, probably <YourGithubUserName>/benchmark-game
   BranchName:
     Type: String
     Description: The name of the branch to track
     Default: "master"
 
+# Metadata > Interface customizes how parameters appear in the AWS Console deploy UI.
+# Purely cosmetic, no runtime effect.
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -49,15 +56,20 @@ Resources:
   ArtifactBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub ${ProjectName}-${AWS::AccountId}-${AWS::Region}-artifac
+      # !Sub with pseudo-parameters (${AWS::AccountId}, ${AWS::Region}) creates a globally unique bucket name.
+      # S3 bucket names must be globally unique across ALL AWS accounts.
+      BucketName: !Sub ${ProjectName}-${AWS::AccountId}-${AWS::Region}-artifact
+      # Disables ACLs: all objects are owned by the bucket owner (modern S3 best practice)
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+      # Defense-in-depth: blocks all public access paths to the bucket
       PublicAccessBlockConfiguration:
         BlockPublicAcls: true
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+      # Lifecycle rules automatically manage object retention and storage class
       LifecycleConfiguration:
         Rules:
           - Id: DeletePipelineArtifactsAfter1Day
@@ -76,16 +88,21 @@ Resources:
             Transitions:
               - TransitionInDays: 0
                 StorageClass: INTELLIGENT_TIERING
+  # CloudFormation Custom Resource: invokes a Lambda during stack lifecycle events.
+  # Here, it empties the S3 bucket on stack deletion (S3 buckets must be empty before CF can delete them).
   ArtifactBucketEmptier:
     Type: Custom::BucketEmptier
+    # DependsOn ensures the Lambda and its permissions exist before CF invokes the custom resource
     DependsOn:
       - BucketEmptierLambdaRole
       - BucketEmptierLambdaRoleBasicPolicy
       - BucketEmptierLambdaWorkPolicy
       - BucketEmptierLambdaLogGroup
     Properties:
+      # ServiceToken tells CloudFormation which Lambda ARN to invoke for this custom resource
       ServiceToken: !GetAtt BucketEmptierLambda.Arn
       BucketName: !Ref ArtifactBucket
+  # SAM shorthand for a Lambda function. InlineCode embeds the handler directly in the template.
   BucketEmptierLambda:
     Type: AWS::Serverless::Function
     Properties:
@@ -96,6 +113,8 @@ Resources:
       MemorySize: 128
       Architectures:
         - arm64
+      # The handler checks event['RequestType']: on 'Delete', empties all object versions from the bucket.
+      # On 'Create'/'Update', does nothing. cfnresponse.send() signals success/failure back to CloudFormation.
       InlineCode: |
         import boto3
         import cfnresponse
@@ -109,17 +128,21 @@ Resources:
             cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, physical_id)
           except Exception as e:
             cfnresponse.send(event, context, cfnresponse.FAILED, {'Data': str(e)}, physical_id)
-      Timeout: 900
+      Timeout: 900 # 15 minutes — max Lambda timeout; emptying a large versioned bucket can be slow
       Role: !GetAtt BucketEmptierLambdaRole.Arn
   BucketEmptierLambdaLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub /aws/lambda/${BucketEmptierLambda}
       RetentionInDays: 90
+  # IAM Role with a trust policy allowing only lambda.amazonaws.com to assume it.
+  # This is the standard pattern for Lambda execution roles.
   BucketEmptierLambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub lambda-${ProjectName}-s3-bucket-emptier
+      RoleName: !Sub ${ProjectName}-s3-bucket-emptier
+      # The "trust policy" defines WHO can assume this role.
+      # sts:AssumeRole with Principal: Service: lambda.amazonaws.com = only the Lambda service.
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -128,6 +151,7 @@ Resources:
               Service: lambda.amazonaws.com
             Action: sts:AssumeRole
       Path: /
+  # Minimal CloudWatch Logs permissions so the Lambda can write its execution logs
   BucketEmptierLambdaRoleBasicPolicy:
     Type: AWS::IAM::Policy
     Properties:
@@ -142,6 +166,8 @@ Resources:
               - logs:CreateLogStream
               - logs:PutLogEvents
             Resource: !GetAtt BucketEmptierLambdaLogGroup.Arn
+  # S3 delete/list permissions for both the artifact and website buckets (the ones to empty on teardown).
+  # ${AWS::Partition} resolves to "aws" in standard regions, "aws-cn" in China, "aws-us-gov" in GovCloud.
   BucketEmptierLambdaWorkPolicy:
     Type: AWS::IAM::Policy
     Properties:
@@ -158,23 +184,25 @@ Resources:
               - s3:ListBucket
               - s3:ListBucketVersions
             Resource:
-              - !Sub arn:${AWS::Partition}:s3:::${ProjectName}-${AWS::AccountId}-${AWS::Region}-artifac
-              - !Sub arn:${AWS::Partition}:s3:::${ProjectName}-${AWS::AccountId}-${AWS::Region}-artifac/*
+              - !Sub arn:${AWS::Partition}:s3:::${ProjectName}-${AWS::AccountId}-${AWS::Region}-artifact
+              - !Sub arn:${AWS::Partition}:s3:::${ProjectName}-${AWS::AccountId}-${AWS::Region}-artifact/*
               - !Sub arn:${AWS::Partition}:s3:::${ProjectName}-${AWS::AccountId}-${AWS::Region}-website
               - !Sub arn:${AWS::Partition}:s3:::${ProjectName}-${AWS::AccountId}-${AWS::Region}-website/*
   ###############
   # Build Infra #
   ###############
+  # CodeBuild project that compiles Rust lambdas and packages CloudFormation templates.
   InfraBuildProject:
     Type: AWS::CodeBuild::Project
     DependsOn:
       - ArtifactBucketEmptier
       - InfraBuildProjectLogGroup
     Properties:
-      Name: !Sub cbp-${ProjectName}-infra-builder
+      Name: !Sub ${ProjectName}-infra-builder
       Description: !Sub Project building infra for the project ${ProjectName}
       ServiceRole: !GetAtt BuildProjectsRole.Arn
       Environment:
+        # ARM_CONTAINER + BUILD_GENERAL1_SMALL runs on ARM64 (Graviton) for cost/performance.
         Type: ARM_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
         Image: aws/codebuild/amazonlinux-aarch64-standard:3.0
@@ -182,21 +210,24 @@ Resources:
           - Name: ARTIFACT_BUCKET
             Value: !Ref ArtifactBucket
       Source:
+        # Source comes from CodePipeline (not directly from a repo)
         Type: CODEPIPELINE
+        # BuildSpec path is relative to the source artifact root
         BuildSpec: ./ci-config/buildspec.yml
       Artifacts:
         Type: CODEPIPELINE
+      # S3 cache: persists compiled Rust dependencies between builds to speed up subsequent builds
       Cache:
         Type: S3
-        Location: !Sub ${ArtifactBucket}/codebuildcache/cbp-${ProjectName}-infra-builder
+        Location: !Sub ${ArtifactBucket}/codebuildcache/${ProjectName}-infra-builder
       TimeoutInMinutes: 60
       Tags:
         - Key: Name
-          Value: !Sub cbp-${ProjectName}-infra-builder
+          Value: !Sub ${ProjectName}-infra-builder
   InfraBuildProjectLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /aws/codebuild/cbp-${ProjectName}-infra-builder
+      LogGroupName: !Sub /aws/codebuild/${ProjectName}-infra-builder
       RetentionInDays: 14
   #################
   # Build Website #
@@ -207,7 +238,7 @@ Resources:
       - ArtifactBucketEmptier
       - WebsiteBuildProjectLogGroup
     Properties:
-      Name: !Sub cbp-${ProjectName}-website-builder
+      Name: !Sub ${ProjectName}-website-builder
       Description: !Sub Project compiling static website for the project ${ProjectName}
       ServiceRole: !GetAtt BuildProjectsRole.Arn
       Environment:
@@ -222,17 +253,18 @@ Resources:
       TimeoutInMinutes: 30
       Tags:
         - Key: Name
-          Value: !Sub cbp-${ProjectName}-website-builder
+          Value: !Sub ${ProjectName}-website-builder
   WebsiteBuildProjectLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
-      LogGroupName: !Sub /aws/codebuild/cbp-${ProjectName}-website-builder
+      LogGroupName: !Sub /aws/codebuild/${ProjectName}-website-builder
       RetentionInDays: 14
 
+  # Shared IAM role for both CodeBuild projects — avoids duplicating purely technical common permissions
   BuildProjectsRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub codebuild-${ProjectName}
+      RoleName: !Sub ${ProjectName}-codebuild
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -250,6 +282,9 @@ Resources:
       PolicyDocument:
         Version: 2012-10-17
         Statement:
+          - Effect: Allow
+            Action: codestar-connections:UseConnection
+            Resource: !Ref CodeStarConnectionArn
           - Effect: Allow
             Action:
               - s3:PutObject
@@ -273,7 +308,7 @@ Resources:
   PipelineRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub codepipeline-${ProjectName}
+      RoleName: !Sub ${ProjectName}-codepipeline
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -317,6 +352,8 @@ Resources:
                   - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucket}
                   - !Sub arn:${AWS::Partition}:s3:::${ArtifactBucket}/*
                   - !Sub arn:${AWS::Partition}:s3:::${ProjectName}-${AWS::AccountId}-${AWS::Region}-website/*
+              # iam:PassRole lets the pipeline hand off CFDeployerRole to CloudFormation.
+              # The condition restricts this to only the CloudFormation service (least privilege).
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: "*"
@@ -331,8 +368,9 @@ Resources:
       - ArtifactBucketEmptier
       - BuildProjectsRolePolicy
     Properties:
-      RoleArn: !GetAtt PipelineRole.Arn
       Name: !Sub release-${ProjectName}
+      RoleArn: !GetAtt PipelineRole.Arn
+      # V2 pipelines support namespaces, per-action pricing, and improved performance
       PipelineType: V2
       Stages:
         - Name: Source
@@ -347,7 +385,10 @@ Resources:
                 ConnectionArn: !Ref CodeStarConnectionArn
                 FullRepositoryId: !Ref ForkedRepoId
                 BranchName: !Ref BranchName
+                # Triggers the pipeline automatically on new commits
                 DetectChanges: true
+                # CODEBUILD_CLONE_REF preserves full git history (not just a source zip)
+                OutputArtifactFormat: CODEBUILD_CLONE_REF
               OutputArtifacts:
                 - Name: Sources
               RunOrder: 1
@@ -364,6 +405,10 @@ Resources:
               RunOrder: 1
               InputArtifacts:
                 - Name: Sources
+              # One CodeBuild action produces TWO output artifacts:
+              # - Infra: packaged CloudFormation templates
+              # - Website: website source code for the next build stage
+              # See ci-config/buildspec.yml
               OutputArtifacts:
                 - Name: Infra
                 - Name: Website
@@ -377,11 +422,16 @@ Resources:
                 Provider: CloudFormation
               Configuration:
                 ChangeSetName: Deploy
+                # CREATE_UPDATE: creates the stack if new, updates if it exists
                 ActionMode: CREATE_UPDATE
-                StackName: !Sub root-stack-${ProjectName}
+                StackName: !Sub ${ProjectName}-root
+                # Acknowledges that the template creates named IAM resources and uses transforms (SAM)
                 Capabilities: CAPABILITY_NAMED_IAM,CAPABILITY_AUTO_EXPAND
+                # CloudFormation writes stack outputs (API URL, Cognito IDs, etc.) to this JSON file.
+                # The website build stage reads it to inject env vars.
                 OutputFileName: infra.outputs.json
-                TemplatePath: Infra::demo-root-template.yml
+                TemplatePath: Infra::root-template.yml
+                # Passes the CI stack's ProjectName parameter to the deployed root stack
                 ParameterOverrides: !Sub '{"ProjectName": "${ProjectName}"}'
                 RoleArn: !GetAtt CFDeployerRole.Arn
               InputArtifacts:
@@ -392,6 +442,7 @@ Resources:
         - Name: BuildWebsite
           Actions:
             - Name: BuildWebsite
+              # Namespace exports env vars that later stages reference with #{BuildWebsite.VAR_NAME}
               Namespace: BuildWebsite
               ActionTypeId:
                 Category: Build
@@ -400,6 +451,7 @@ Resources:
                 Provider: CodeBuild
               Configuration:
                 ProjectName: !Ref WebsiteBuildProject
+                # PrimarySource tells CodeBuild which input artifact contains the buildspec
                 PrimarySource: Website
               RunOrder: 1
               InputArtifacts:
@@ -408,6 +460,9 @@ Resources:
               OutputArtifacts:
                 - Name: StaticContent
                 - Name: DynamicContent
+        # Two parallel S3 deploy actions with different cache strategies:
+        # Static content (JS/CSS/images) gets long cache headers (immutable)
+        # Dynamic content (HTML) gets short cache headers (must-revalidate)
         - Name: DeployWebsite
           Actions:
             - Name: DeployStaticWebsite
@@ -417,6 +472,7 @@ Resources:
                 Version: 1
                 Provider: S3
               Configuration:
+                # Pipeline variable syntax #{namespace.variable}: resolved at runtime from BuildWebsite stage
                 BucketName: "#{BuildWebsite.STATIC_WEB_BUCKET}"
                 Extract: true
                 CacheControl: public, max-age=604800, immutable
@@ -446,7 +502,7 @@ Resources:
   CFDeployerRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub role-${ProjectName}-CF-Deployer
+      RoleName: !Sub ${ProjectName}-cf-deployer
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -454,43 +510,147 @@ Resources:
             Principal:
               Service: cloudformation.amazonaws.com
             Action: sts:AssumeRole
+      # NOTE ON ACTION WILDCARDS:
+      # Most statements below use "<service>:*" for actions, which looks broad
+      # but is actually scoped by the Resource ARN. IAM evaluates BOTH the action
+      # and the resource: an action will only be allowed if it matches the
+      # Resource ARN pattern too. For example, "s3:*" on a bucket ARN (without
+      # "/*") will never grant object-level operations like s3:GetObject, because
+      # those require an object ARN. This lets us keep the policy readable while
+      # still fairly restricting what the role can actually do.
+      # IAM is the exception: see the comment on IamRoles below.
       Policies:
-        - PolicyName: !Sub policy-${ProjectName}-CF-Deployer
+        - PolicyName: !Sub ${ProjectName}-deployer
           PolicyDocument:
             Version: 2012-10-17
             Statement:
+              ##########################
+              # Artifacts & CloudFormation
+              ##########################
               - Sid: ReadArtifacts
                 Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub arn:${AWS::Partition}:s3:::${ArtifactBucket}/*
-              - Effect: Allow
+              - Sid: CloudFormationChangeSet
+                Effect: Allow
                 Action: cloudformation:CreateChangeSet
                 Resource: "*"
-              - Effect: Allow
+              - Sid: CloudFormationStacks
+                Effect: Allow
                 Action:
                   - cloudformation:DescribeStacks
                   - cloudformation:CreateStack
                   - cloudformation:UpdateStack
                   - cloudformation:RollbackStack
                   - cloudformation:DeleteStack
-                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/root-stack-${ProjectName}*
-              - Effect: Allow
-                Action:
-                  - lambda:*
-                  - iam:*Role*
-                  - logs:*
-                  - s3:*Bucket*
-                  - s3:*Configuration
-                  - cloudfront:*
-                  - dynamodb:*
-                  - appsync:*
-                  - cognito-idp:*
+                Resource: !Sub arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ProjectName}-root*
+              # Allows CloudFormation to pass its OWN role to nested stacks.
+              # Without this, nested stack creation fails because CF can't delegate its own role.
+              - Sid: PassSelfRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-cf-deployer
+              ##########
+              # Lambda #
+              ##########
+              - Sid: Lambda
+                Effect: Allow
+                Action: lambda:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-*
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:event-source-mapping:*
+              - Sid: LambdaESM
+                Effect: Allow
+                Action: lambda:*EventSourceMapping*
                 Resource: "*"
+              #######
+              # IAM #
+              #######
+              # IAM keeps explicit actions: iam:* on a role ARN could still allow
+              # dangerous operations like CreateServiceLinkedRole or
+              # PutRolePermissionsBoundary that go beyond simple CRUD.
+              - Sid: IamRoles
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:GetRole
+                  - iam:UpdateRole
+                  - iam:DeleteRole
+                  - iam:PassRole
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:ListRoleTags
+                  - iam:PutRolePolicy
+                  - iam:GetRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                Resource:
+                  - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:role/${ProjectName}-*
+              ################
+              # CloudWatch Logs
+              ################
+              - Sid: LogGroups
+                Effect: Allow
+                Action: logs:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/${ProjectName}-*
+                  - !Sub arn:${AWS::Partition}:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/appsync/apis/*
+              - Sid: DescribeLogGroups
+                Effect: Allow
+                Action: logs:DescribeLogGroups
+                Resource: "*"
+              ######
+              # S3 #
+              ######
+              - Sid: S3WebsiteBucket
+                Effect: Allow
+                Action: s3:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:s3:::${ProjectName}-${AWS::AccountId}-${AWS::Region}-website
+              ##############
+              # CloudFront #
+              ##############
+              - Sid: CloudFront
+                Effect: Allow
+                Action: cloudfront:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:distribution/*
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:origin-access-control/*
+                  - !Sub arn:${AWS::Partition}:cloudfront::${AWS::AccountId}:response-headers-policy/*
+              ############
+              # DynamoDB #
+              ############
+              - Sid: DynamoDB
+                Effect: Allow
+                Action: dynamodb:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${ProjectName}-*
+              ###########
+              # AppSync #
+              ###########
+              - Sid: AppSync
+                Effect: Allow
+                Action: appsync:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:appsync:${AWS::Region}:${AWS::AccountId}:*
+              ###########
+              # Cognito #
+              ###########
+              - Sid: Cognito
+                Effect: Allow
+                Action: cognito-idp:*
+                Resource:
+                  - !Sub arn:${AWS::Partition}:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*
       Path: /
 
 Outputs:
   CustomResourceBucketEmptier:
     Description: Arn of the Lambda used as a CFN Custom Resource to empty buckets
     Value: !GetAtt BucketEmptierLambda.Arn
+    # Export makes this output available to OTHER stacks via Fn::ImportValue (cross-stack reference).
+    # The static-website stack imports this to reuse the bucket emptier Lambda.
     Export:
       Name: !Sub CustomResource:${ProjectName}:S3BucketEmptier

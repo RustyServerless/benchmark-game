@@ -38,6 +38,8 @@ Resources:
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 1
+  # Custom resource reusing the bucket emptier Lambda from the CI stack.
+  # Fn::ImportValue reads a value exported by another stack (cross-stack reference).
   StaticWebBucketEmptier:
     Type: Custom::BucketEmptier
     Properties:
@@ -46,6 +48,8 @@ Resources:
           Fn::ImportValue: !Sub "CustomResource:${ProjectName}:S3BucketEmptier",
         }
       BucketName: !Ref StaticWebBucket
+  # Bucket policy granting CloudFront read access.
+  # The Condition restricts access to only this specific distribution (prevents other distributions from reading).
   StaticWebBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -60,10 +64,13 @@ Resources:
             Condition:
               StringEquals:
                 "AWS:SourceArn": !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+  # Triggered by S3 ObjectCreated events on the index.html prefix.
+  # When a new deployment uploads index.html, this Lambda tags old files for deletion
+  # (the lifecycle rule on the bucket handles actual removal).
   CleanupS3Lambda:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub ${ProjectName}-cleanup-s3
+      FunctionName: !Sub ${ProjectName}-cfn-custom-cleanup-s3
       Handler: index.lambda_handler
       Runtime: python3.13
       MemorySize: 128
@@ -92,7 +99,7 @@ Resources:
   CleanupS3LambdaRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub lambda-${ProjectName}-cleanup-s3
+      RoleName: !Sub ${ProjectName}-cfn-custom-cleanup-s3
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -135,20 +142,24 @@ Resources:
   ###########################
   # Cloudfront Distribution #
   ###########################
+  # OAC (Origin Access Control): the modern way for CloudFront to authenticate to S3.
+  # Replaces the legacy OAI (Origin Access Identity). SigningBehavior: always means
+  # CloudFront always signs requests to S3 with SigV4.
   CloudFrontOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
         Description: !Sub Access to static content on S3 bucket ${StaticWebBucket}
-        Name: !Sub oac-${ProjectName}
+        Name: !Ref ProjectName
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
+  # Adds security headers to every response and strips sensitive S3 metadata headers
   CloudFrontResponseHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
       ResponseHeadersPolicyConfig:
-        Name: !Sub cfrhp-${ProjectName}-default
+        Name: !Sub ${ProjectName}-default
         Comment: Response headers policy with security headers and removing S3 Metadata
         SecurityHeadersConfig:
           ContentTypeOptions:
@@ -208,13 +219,12 @@ Resources:
         DefaultRootObject: index.html
         HttpVersion: http2
         IPV6Enabled: true
-        # Logging:
-        # Logging
         Origins:
           - Id: s3-bucket
             DomainName: !GetAtt StaticWebBucket.RegionalDomainName
             OriginAccessControlId: !Ref CloudFrontOriginAccessControl
             S3OriginConfig: {}
+        # PriceClass_100: cheapest edge locations only (North America + Europe)
         PriceClass: PriceClass_100
 
 Outputs:

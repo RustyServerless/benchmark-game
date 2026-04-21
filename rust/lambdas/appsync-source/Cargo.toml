@@ -8,6 +8,8 @@ authors.workspace = true
 [dependencies]
 dynamodb_utils = { path = "../../libs/dynamodb_utils" }
 lambda-appsync = { workspace = true }
+
+dynamodb-facade = { workspace = true }
 aws-sdk-dynamodb = { workspace = true }
 
 serde = { workspace = true }

@@ -166,6 +166,7 @@ function stop_reporting() {
 watch([game_status, current_player], () => {
   if (current_player.value && game_status.value == 'STARTED') {
     begin_reporting();
+    local_clicks_counter.value = current_player.value.clicks;
   } else {
     stop_reporting();
   }

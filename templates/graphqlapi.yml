@@ -1,4 +1,7 @@
 AWSTemplateFormatVersion: 2010-09-09
+# Two transforms:
+# - LanguageExtensions enables Fn::ForEach (looping over resources) and Fn::ToJsonString
+# - Serverless (SAM) enables shorthand like AWS::Serverless::Function
 Transform:
   - AWS::LanguageExtensions
   - AWS::Serverless-2016-10-31
@@ -14,19 +17,29 @@ Parameters:
     Type: String
     Description: ID of the User Pool Client to authorize
 
+# SAM Globals sets default properties for ALL AWS::Serverless::Function resources in this template.
 Globals:
   Function:
+    # provided.al2023 is the custom runtime for compiled binaries (Rust, Go, C++).
+    # The Lambda service executes the `bootstrap` binary directly.
     Runtime: provided.al2023
     MemorySize: 128
     Timeout: 30
+    # For custom runtimes, Handler is technically ignored (bootstrap is always executed).
+    # This value is a documentation convention.
     Handler: rust.handler
     Architectures:
+      # ARM64 (Graviton2): ~20% cheaper and often faster than x86_64 for Rust Lambda workloads
       - arm64
     Environment:
       Variables:
         BACKEND_TABLE_NAME: !Ref BackendTable
+        # RUST_LOG configures the `log` crate's log filter:
+        # debug for app code, info for noisy AWS SDK internals
         RUST_LOG: debug,hyper=info,h2=info,tracing=info,aws_config=info,aws_smithy_runtime=info,aws_smithy_runtime_api=info,rustls=info
 
+# CloudFormation Mappings are static lookup tables.
+# Here, they list all GraphQL operations organized by type, used to drive the Fn::ForEach loops below.
 Mappings:
   AppSyncResolvers:
     Rust:
@@ -46,12 +59,17 @@ Resources:
   ############################################
   # Generic (Rust) AppSync GraphQL Resolvers #
   ############################################
+  # Fn::ForEach (from AWS::LanguageExtensions) iterates over [Query, Mutation, Subscription]
+  # and for each, iterates over operation names from the Mappings to create Resolver resources.
+  # This avoids writing dozens of identical resolver definitions by hand.
   "Fn::ForEach::RustOps":
     - OpType
     - [Query, Mutation, Subscription]
     - "Fn::ForEach::Op":
         - Op
+        # !FindInMap retrieves the list of operations for the current OpType from the Mappings
         - !FindInMap [AppSyncResolvers, Rust, !Ref OpType]
+        # Dynamic logical ID: CF creates unique resource names like "QuerygameStateResolver", etc.
         - "Rust${OpType}${Op}Resolver":
             Type: AWS::AppSync::Resolver
             DependsOn: GraphQLApiSchema
@@ -61,6 +79,8 @@ Resources:
               Kind: UNIT
               TypeName: !Ref OpType
               FieldName: !Ref Op
+              # MaxBatchSize enables batching: AppSync sends up to 100 resolver invocations
+              # in a single Lambda call, reducing cold starts and per-invocation overhead.
               MaxBatchSize: 100
               MetricsConfig: ENABLED
 
@@ -445,11 +465,15 @@ Resources:
   #################
   # Backend table #
   #################
+  # Single-table design: all entity types (players, game state) share one table.
+  # Different PK patterns discriminate entity types.
   BackendTable:
     Type: AWS::DynamoDB::Table
     Properties:
       TableName: !Sub ${ProjectName}-backend
+      # PAY_PER_REQUEST: no capacity planning needed, pay per read/write
       BillingMode: PAY_PER_REQUEST
+      # Server-side encryption using AWS KMS (encrypts data at rest)
       SSESpecification:
         SSEEnabled: true
         SSEType: KMS
@@ -462,9 +486,11 @@ Resources:
       PointInTimeRecoverySpecification:
         PointInTimeRecoveryEnabled: True
 
-  ###############
-  # GraphQL API #
-  ###############
+  #############################################
+  # GraphQL API Key + Auto-refresh expiration #
+  #############################################
+  # AppSync API keys provide unauthenticated access.
+  # This key is embedded in the frontend for player (non-admin) operations.
   GraphQLApiPublicKey:
     Type: AWS::AppSync::ApiKey
     Properties:
@@ -507,10 +533,14 @@ Resources:
     Properties:
       LogGroupName: !Sub /aws/lambda/${ProjectName}-cfn-custom-timestamp
       RetentionInDays: 7
+  ###############
+  # GraphQL API #
+  ###############
   GraphQLApiSchema:
     Type: AWS::AppSync::GraphQLSchema
     Properties:
       ApiId: !GetAtt GraphQLApi.ApiId
+      # Relative file path: `aws cloudformation package` uploads it to S3 at build time
       DefinitionS3Location: ../graphql/schema.gql
   GraphQLApi:
     Type: AWS::AppSync::GraphQLApi
@@ -518,17 +548,23 @@ Resources:
       ApiType: GRAPHQL
       Name: !Ref ProjectName
       Visibility: GLOBAL
+      # Primary auth: Cognito User Pools — admin users authenticate with JWT tokens.
+      # AppIdClientRegex restricts which Cognito app client IDs are accepted.
       AuthenticationType: AMAZON_COGNITO_USER_POOLS
       UserPoolConfig:
         UserPoolId: !Ref CognitoUserPoolId
         AwsRegion: !Ref AWS::Region
         AppIdClientRegex: !Sub ^${CognitoUserPoolClientId}$
         DefaultAction: ALLOW
+      # Second auth mode: API key for unauthenticated player access.
+      # In the GraphQL schema, directives (@aws_api_key, @aws_cognito_user_pools)
+      # control which auth mode each operation accepts.
       AdditionalAuthenticationProviders:
         - AuthenticationType: API_KEY
       IntrospectionConfig: ENABLED
       QueryDepthLimit: 0 # Unlimited
       ResolverCountLimit: 10000 # 10000
+      # Enable X-Ray distributed tracing for the API
       XrayEnabled: true
       LogConfig:
         CloudWatchLogsRoleArn: !GetAtt GraphQLApiLogRole.Arn
@@ -542,7 +578,7 @@ Resources:
   GraphQLApiLogRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub gql-${ProjectName}-log
+      RoleName: !Sub ${ProjectName}-gql-log
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -571,7 +607,7 @@ Resources:
   DatasourceRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub gql-${ProjectName}-datasource
+      RoleName: !Sub ${ProjectName}-gql-datasource
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -618,6 +654,9 @@ Resources:
             Resource:
               - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BackendTable}
               - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${BackendTable}/index/*
+  # Connects AppSync to the Lambda function.
+  # Type: AWS_LAMBDA tells AppSync this data source invokes a Lambda.
+  # ServiceRoleArn is the IAM role AppSync assumes to invoke the Lambda.
   BackendTableDatasource:
     Type: AWS::AppSync::DataSource
     Properties:
@@ -630,6 +669,8 @@ Resources:
         UseCallerCredentials: false
       ServiceRoleArn: !GetAtt DatasourceRole.Arn
 
+  # The main Rust Lambda: handles ALL AppSync resolvers via the lambda-appsync crate.
+  # CodeUri points to the compiled binary directory.
   AppsyncSourceFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -644,7 +685,7 @@ Resources:
   AppsyncSourceFunctionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub lambda-${ProjectName}-appsync-source
+      RoleName: !Sub ${ProjectName}-appsync-source
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -691,7 +732,7 @@ Resources:
   AppsyncRustBenchSourceFunctionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub lambda-${ProjectName}-appsync-rust-bench-source
+      RoleName: !Sub ${ProjectName}-appsync-rust-bench-source
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:
@@ -740,7 +781,7 @@ Resources:
   AppsyncPythonBenchSourceFunctionRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub lambda-${ProjectName}-appsync-python-bench-source
+      RoleName: !Sub ${ProjectName}-appsync-python-bench-source
       AssumeRolePolicyDocument:
         Version: 2012-10-17
         Statement:

@@ -10,6 +10,7 @@ license = "MIT"
 
 [workspace.dependencies]
 lambda-appsync = { version = "0.10.0", features = ["compat", "log"] }
+dynamodb-facade = "0.1.0"
 
 aws-sdk-dynamodb = { version = "1.59" }
 serde_dynamo = { version = "4", features = ["aws-sdk-dynamodb+1"] }

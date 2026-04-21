@@ -1,16 +1,22 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Main project stack deployed by the CICD and containing specific nested stacks
 
+# Parameters are user-provided inputs injected when the stack is deployed.
+# Here, ProjectName is passed through to every nested stack to namespace all resources.
 Parameters:
   ProjectName:
     Type: String
 
 Resources:
+  # Each nested stack (AWS::CloudFormation::Stack) deploys a separate template as a child stack.
+  # This keeps the infrastructure modular: website, auth, and API are independent units.
   StaticWebsiteStack:
     Type: AWS::CloudFormation::Stack
     Properties:
       Parameters:
         ProjectName: !Ref ProjectName
+      # Relative path to the nested template file.
+      # `aws cloudformation package` (run during the CI build) uploads it to S3 and rewrites this to an S3 URL.
       TemplateURL: ./templates/static-website.yml
       TimeoutInMinutes: 15
       Tags:
@@ -21,6 +27,8 @@ Resources:
     Properties:
       Parameters:
         ProjectName: !Ref ProjectName
+        # !GetAtt retrieves an output from an already-deployed nested stack.
+        # This also creates an implicit dependency: CognitoStack waits for StaticWebsiteStack to finish.
         WebsiteDomainName: !GetAtt StaticWebsiteStack.Outputs.WebsiteDomainName
       TemplateURL: ./templates/cognito.yml
       TimeoutInMinutes: 10
@@ -32,6 +40,8 @@ Resources:
     Properties:
       Parameters:
         ProjectName: !Ref ProjectName
+        # Pass Cognito outputs as inputs to the GraphQL API stack.
+        # This wires the authentication layer to the API.
         CognitoUserPoolId: !GetAtt CognitoStack.Outputs.CognitoUserPoolId
         CognitoUserPoolClientId: !GetAtt CognitoStack.Outputs.CognitoUserPoolClientId
       TemplateURL: ./templates/graphqlapi.yml
@@ -40,12 +50,14 @@ Resources:
         - Key: Project
           Value: !Ref ProjectName
 
+# Outputs expose values from nested stacks so the CI/CD pipeline and website build can consume them.
 Outputs:
   StaticWebBucket:
     Description: Name of the web bucket containing the website
     Value: !GetAtt StaticWebsiteStack.Outputs.StaticWebBucket
   WebsiteUrl:
     Description: URL of the website
+    # !Sub performs string interpolation, embedding the CloudFront domain name into a full URL
     Value: !Sub https://${StaticWebsiteStack.Outputs.WebsiteDomainName}/
   CognitoUserPoolId:
     Description: The Cognito UserPool ID

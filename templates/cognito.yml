@@ -12,15 +12,19 @@ Resources:
   #####################
   # Cognito User Pool #
   #####################
+  # Cognito User Pool: a managed user directory that stores admin accounts and issues JWT tokens.
   UserPool:
     Type: AWS::Cognito::UserPool
     Properties:
-      UserPoolName: !Sub cup-${ProjectName}
+      UserPoolName: !Ref ProjectName
+      # ESSENTIALS tier unlocks managed login customization (ManagedLoginBranding)
       UserPoolTier: ESSENTIALS
       Schema:
         - Name: email
           Required: true
+          # Mutable: false means users cannot change their email after registration
           Mutable: false
+      # Users sign in with their email address instead of a separate username
       UsernameAttributes:
         - email
       UsernameConfiguration:
@@ -36,12 +40,16 @@ Resources:
         SignInPolicy:
           AllowedFirstAuthFactors:
             - PASSWORD
+      # Disables self-service password recovery — only admins can reset passwords
       AccountRecoverySetting:
         RecoveryMechanisms:
           - Name: admin_only
             Priority: 1
+      # Disables self-registration — only admins can create new admin users.
+      # Players don't use Cognito at all (they use the API key).
       AdminCreateUserConfig:
         AllowAdminCreateUserOnly: true
+  # Creates a hosted Cognito domain for the login UI (e.g. benchmark-game.auth.<region>.amazoncognito.com)
   DefaultUserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
     Properties:
@@ -49,11 +57,14 @@ Resources:
       Domain: !Ref ProjectName
       ManagedLoginVersion: 2
 
+  # The OAuth client configuration for the frontend app.
+  # Defines how the website authenticates with Cognito.
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
       ClientName: !Ref ProjectName
       UserPoolId: !Ref UserPool
+      # Only Cognito's built-in user directory (no social login, no SAML federation)
       SupportedIdentityProviders:
         - COGNITO
       AllowedOAuthFlowsUserPoolClient: true
@@ -61,6 +72,7 @@ Resources:
         - openid
         - email
         - profile
+      # Authorization Code flow with PKCE: the most secure OAuth flow for single-page apps
       AllowedOAuthFlows:
         - code
       AuthSessionValidity: 5
@@ -73,6 +85,8 @@ Resources:
         RefreshToken: days
       EnableTokenRevocation: true
       DefaultRedirectURI: !Sub https://${WebsiteDomainName}
+      # Both production and development URLs must be explicitly registered.
+      # Cognito redirects to one of these after login/logout.
       CallbackURLs:
         - !Sub https://${WebsiteDomainName}
         - !Sub https://${WebsiteDomainName}/
@@ -83,10 +97,14 @@ Resources:
         - !Sub https://${WebsiteDomainName}/
         - http://localhost:3000
         - http://localhost:3000/
+      # SRP (Secure Remote Password): password never leaves the device.
+      # REFRESH_TOKEN_AUTH allows token renewal without re-entering credentials.
       ExplicitAuthFlows:
         - ALLOW_REFRESH_TOKEN_AUTH
         - ALLOW_USER_SRP_AUTH
+      # No client secret: SPAs can't securely store secrets (code runs in the browser)
       GenerateSecret: false
+      # Prevents user enumeration attacks: same error whether a user exists or not
       PreventUserExistenceErrors: ENABLED
   ManagedLogin:
     Type: AWS::Cognito::ManagedLoginBranding
@@ -98,6 +116,8 @@ Resources:
       # Settings: Json
       # Assets:
       #   - AssetType
+  # Users in this group get a `cognito:groups` claim in their JWT token.
+  # AppSync uses @aws_cognito_user_pools(cognito_groups: ["Admins"]) for authorization.
   AdminGroup:
     Type: AWS::Cognito::UserPoolGroup
     Properties:
