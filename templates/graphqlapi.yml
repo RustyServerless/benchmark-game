@@ -528,6 +528,15 @@ Resources:
                     cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
             except Exception as e:
                 cfnresponse.send(event, context, cfnresponse.FAILED, {'Error': str(e)})
+      # LogGroup are created in a controled manner by CF,
+      # prevent lambdas from creating them
+      Policies:
+        - Version: 2012-10-17
+          Statement:
+            - Sid: DenyCreateLogGroup
+              Effect: Deny
+              Action: log:CreateLogGroup
+              Resource: "*"
   TimestampFunctionLogGroup:
     Type: AWS::Logs::LogGroup
     Properties:
