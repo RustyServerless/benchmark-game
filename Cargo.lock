@@ -47,7 +47,7 @@ version = "1.1.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c48f72fd53cd289104fc64099abca73db4166ad86ea0b4341abe65af83dadc"
 dependencies = [
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -58,7 +58,7 @@ checksum = "291e6a250ff86cd4a820112fb8898808a366d8f9f58ce16d1f538353ad55747d"
 dependencies = [
  "anstyle",
  "once_cell_polyfill",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -71,12 +71,10 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "appsync-bench-source"
 version = "0.1.0"
 dependencies = [
- "aws-sdk-dynamodb",
  "dynamodb-facade",
  "dynamodb_utils",
  "lambda-appsync",
  "serde",
- "serde_dynamo",
  "thiserror 1.0.69",
 ]
 
@@ -84,12 +82,10 @@ dependencies = [
 name = "appsync-source"
 version = "0.1.0"
 dependencies = [
- "aws-sdk-dynamodb",
  "dynamodb-facade",
  "dynamodb_utils",
  "lambda-appsync",
  "serde",
- "serde_dynamo",
  "thiserror 1.0.69",
 ]
 
@@ -762,9 +758,9 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dynamodb-facade"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "25891333f05d3315aac1b1539e0bbb0560ab85f0d26ee60e1f5c7f766dd297eb"
+checksum = "f1a1717f444290fe81e2a30fb48d555f3a17a876d8ee157f44ff692723b530da"
 dependencies = [
  "async-stream",
  "aws-sdk-dynamodb",
@@ -781,12 +777,10 @@ dependencies = [
 name = "dynamodb_utils"
 version = "0.1.0"
 dependencies = [
- "aws-sdk-dynamodb",
  "dynamodb-facade",
  "lambda-appsync",
  "log",
  "serde",
- "serde_dynamo",
  "tokio",
 ]
 
@@ -832,7 +826,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2241,7 +2235,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a766e1110788c36f4fa1c2b71b387a7815aa65f88ce0229841826633d93723e"
 dependencies = [
  "libc",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

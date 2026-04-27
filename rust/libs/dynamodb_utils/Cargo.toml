@@ -11,9 +11,7 @@ authors.workspace = true
 tokio = { workspace = true}
 dynamodb-facade = { workspace = true }
 lambda-appsync = { workspace = true }
-aws-sdk-dynamodb = { workspace = true }
 
 log = { workspace = true }
 
 serde = { workspace = true }
-serde_dynamo = { workspace = true }
