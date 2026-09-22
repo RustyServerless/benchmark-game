@@ -1,11 +1,8 @@
-use crate::{
-    GameStatus, LatencyReport, Player, dynamodb,
-    dynamodb_helpers::{dynamodb_update_player_click, dynamodb_update_player_latency_stats},
-};
+use crate::{GameStatus, LatencyReport, Player};
 
-use dynamodb_facade::{DynamoDBItemOp, KeyId};
-use dynamodb_utils::facade2appsync;
-use lambda_appsync::{AppsyncError, ID, appsync_operation};
+use data_model::facade2appsync;
+use dynamodb_facade::{Condition, DynamoDBItemOp, KeyId, Update};
+use lambda_appsync::{AppsyncError, ID, appsync_operation, log};
 
 fn player_not_found() -> AppsyncError {
     AppsyncError::new("PlayerNotFound", "Player does not exist")
@@ -16,7 +13,7 @@ fn invalid_game_status() -> AppsyncError {
 
 async fn assert_game_started() -> Result<(), AppsyncError> {
     // Retrieve the current game status
-    let game_status = GameStatus::get(dynamodb(), KeyId::NONE)
+    let game_status = GameStatus::get(KeyId::NONE)
         .await
         .map_err(facade2appsync)?
         .ok_or_else(invalid_game_status)?;
@@ -31,8 +28,10 @@ async fn assert_game_started() -> Result<(), AppsyncError> {
 #[appsync_operation(mutation(clickRust))]
 pub async fn click(player_id: ID, secret: String) -> Result<Player, AppsyncError> {
     assert_game_started().await?;
-    // Else we increment the click_counter of the player
-    dynamodb_update_player_click(player_id, secret)
+    // increment the click_counter of the player
+
+    Player::update_by_id(KeyId::pk(player_id), Update::init_increment("clicks", 0, 1))
+        .condition(Player::exists() & Condition::eq("secret", secret))
         .await
         .map_err(facade2appsync)
 }
@@ -45,8 +44,7 @@ pub async fn report_latency(
 ) -> Result<Player, AppsyncError> {
     // Kick off an async request to get the player data first, so it can run in parallel
     // with the game status check that follows
-    let player_req =
-        lambda_appsync::tokio::spawn(Player::get(dynamodb(), KeyId::pk(player_id)).execute());
+    let player_req = lambda_appsync::tokio::spawn(Player::get(KeyId::pk(player_id)).execute());
 
     // Verify the game is currently in progress
     assert_game_started().await?;
@@ -100,17 +98,42 @@ pub async fn report_latency(
     // Only update the stats in the database if we got a valid new average latency
     // (protects against division by zero or other invalid calculations)
     if new_avg_latency.is_finite() {
-        // Call the update functions, with the old and the new values so it can perform a conditional update
-        Ok(dynamodb_update_player_latency_stats(
-            player_id,
-            secret,
-            old_avg_latency,
-            old_avg_latency_clicks,
-            new_avg_latency,
-            new_avg_latency_clicks,
-        )
-        .await
-        .map_err(facade2appsync)?)
+        log::debug!(
+            "report_latency - player_id={player_id} \
+            old_avg_latency={old_avg_latency:?} old_avg_latency_clicks={old_avg_latency_clicks:?} \
+            new_avg_latency={new_avg_latency} new_avg_latency_clicks={new_avg_latency_clicks}"
+        );
+
+        // Start building the update operation with the new values
+        let update = Update::set("avg_latency", new_avg_latency)
+            .and(Update::set("avg_latency_clicks", new_avg_latency_clicks));
+        let base_condition = Player::exists() & Condition::eq("secret", secret);
+
+        // Add optimistic locking condition based on old values
+        let latency_condition = match (old_avg_latency, old_avg_latency_clicks) {
+            // If we had previous values, ensure they haven't changed
+            (Some(old_avg_latency), Some(old_avg_latency_clicks)) => {
+                Condition::eq("avg_latency", old_avg_latency)
+                    & Condition::eq("avg_latency_clicks", old_avg_latency_clicks)
+            }
+
+            // For first update, ensure attributes don't exist yet
+            (None, None) => {
+                Condition::not_exists("avg_latency") & Condition::not_exists("avg_latency_clicks")
+            }
+            _ => unreachable!(
+                "Functionnal error, old_avg_latency and old_avg_latency_clicks \
+                can only be both None or both Some"
+            ),
+        };
+
+        log::debug!("update={update}");
+        log::debug!("latency_condition={latency_condition}");
+
+        Ok(Player::update_by_id(KeyId::pk(player_id), update)
+            .condition(base_condition & latency_condition)
+            .await
+            .map_err(facade2appsync)?)
     } else {
         // If the calculation gave invalid results, return the player unchanged
         Ok(player)

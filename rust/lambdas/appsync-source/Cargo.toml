@@ -6,11 +6,15 @@ rust-version.workspace = true
 authors.workspace = true
 
 [dependencies]
-dynamodb_utils = { path = "../../libs/dynamodb_utils" }
+data_model = { path = "../../libs/data_model" }
 lambda-appsync = { workspace = true }
 
 dynamodb-facade = { workspace = true }
 
+lambda_runtime = { workspace = true }
+aws-config = { workspace = true }
+
+tokio = { workspace = true }
 serde = { workspace = true }
 
 thiserror = { workspace = true }

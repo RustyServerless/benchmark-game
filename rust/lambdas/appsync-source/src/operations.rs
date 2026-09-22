@@ -1,15 +1,15 @@
 use std::collections::HashSet;
 
 use crate::{
-    GameStatus, Player, Team, dynamodb,
+    GameStatus, Player, Team,
     dynamodb_helpers::{
         dynamodb_delete_player, dynamodb_list_players, dynamodb_put_new_player,
         dynamodb_query_teams_player_count, dynamodb_reset_game, dynamodb_set_game_status,
         dynamodb_update_player_name,
     },
 };
+use data_model::facade2appsync;
 use dynamodb_facade::{DynamoDBItemOp, KeyId};
-use dynamodb_utils::facade2appsync;
 use lambda_appsync::{AppsyncError, ID, appsync_operation};
 
 fn player_not_found() -> AppsyncError {
@@ -23,7 +23,7 @@ pub async fn players() -> Result<Vec<Player>, AppsyncError> {
 
 #[appsync_operation(query(gameStatus))]
 pub async fn game_status() -> Result<GameStatus, AppsyncError> {
-    Ok(GameStatus::get(dynamodb(), KeyId::NONE)
+    Ok(GameStatus::get(KeyId::NONE)
         .await
         .map_err(facade2appsync)?
         .unwrap_or(GameStatus::Reset))

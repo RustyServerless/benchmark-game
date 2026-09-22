@@ -1,25 +1,25 @@
 use std::collections::HashMap;
 
+use data_model::{SimpleTable, appsync_types::PlayerWithSecret};
 use dynamodb_facade::{
     Condition, DynamoDBItem, DynamoDBItemBatchOp, DynamoDBItemOp, Item, KeyId, Update,
     dynamodb_batch_write,
 };
-use dynamodb_utils::{SimpleTable, appsync_types::PlayerWithSecret};
 use lambda_appsync::{ID, log};
 
-use crate::{GameStatus, Player, Team, dynamodb};
+use crate::{GameStatus, Player, Team};
 
 /// Retrieves all [Player] items from DynamoDB as raw [DynamoItem]
 /// Used internally by query functions that need access to the full item data
 async fn dynamodb_list_player_items() -> Result<Vec<Item<SimpleTable>>, dynamodb_facade::Error> {
-    Player::scan(dynamodb())
+    Player::scan()
         .filter(Condition::eq("type", Player::PK_TYPE))
         .raw()
         .all()
         .await
 }
 pub async fn dynamodb_list_players() -> Result<Vec<Player>, dynamodb_facade::Error> {
-    Player::scan(dynamodb())
+    Player::scan()
         .filter(Condition::eq("type", Player::PK_TYPE))
         .all()
         .await
@@ -62,7 +62,7 @@ pub async fn dynamodb_reset_game() -> Result<(), dynamodb_facade::Error> {
             PlayerWithSecret::new(&player, secret).batch_put()
         })
         .collect::<Vec<_>>();
-    dynamodb_batch_write::<SimpleTable>(dynamodb(), batch_write_requests).await
+    dynamodb_batch_write::<SimpleTable>(batch_write_requests).await
 }
 
 /// Updates the game status in DynamoDB
@@ -75,7 +75,7 @@ pub async fn dynamodb_set_game_status(status: GameStatus) -> Result<(), dynamodb
     let current_status = status.valid_from_status();
 
     status
-        .put(dynamodb())
+        .put()
         .condition(
             GameStatus::not_exists()
                 | Condition::eq(
@@ -95,7 +95,7 @@ pub async fn dynamodb_put_new_player(
 ) -> Result<(), dynamodb_facade::Error> {
     log::debug!("ENTER dynamodb_put_new_player - new_player={new_player:?}");
     PlayerWithSecret::new(new_player, secret)
-        .put(dynamodb())
+        .put()
         .not_exists()
         .await
 }
@@ -109,13 +109,9 @@ pub async fn dynamodb_update_player_name(
     secret: String,
 ) -> Result<Player, dynamodb_facade::Error> {
     log::debug!("ENTER dynamodb_update_player_name - player_id={player_id} new_name={new_name}");
-    Player::update_by_id(
-        dynamodb(),
-        KeyId::pk(player_id),
-        Update::set("name", new_name),
-    )
-    .condition(Player::exists() & Condition::eq("secret", secret))
-    .await
+    Player::update_by_id(KeyId::pk(player_id), Update::set("name", new_name))
+        .condition(Player::exists() & Condition::eq("secret", secret))
+        .await
 }
 
 /// Deletes a player record from DynamoDB
@@ -125,7 +121,7 @@ pub async fn dynamodb_delete_player(
     player_id: ID,
 ) -> Result<Option<Player>, dynamodb_facade::Error> {
     log::debug!("ENTER dynamodb_delete_player - player_id={player_id}");
-    Player::delete_by_id(dynamodb(), KeyId::pk(player_id)).await
+    Player::delete_by_id(KeyId::pk(player_id)).await
 }
 
 /// Queries DynamoDB to get a count of players per team

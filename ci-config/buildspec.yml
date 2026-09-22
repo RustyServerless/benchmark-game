@@ -9,6 +9,7 @@ phases:
       - |
         echo Installing Rust
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none --profile minimal
+        rustup show
         export PATH="/root/.cargo/bin:$PATH"
         pip3 install cargo-lambda
     finally:
